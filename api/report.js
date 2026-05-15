@@ -1,13 +1,12 @@
-// Vercel Serverless Function — 飞书 + DeepSeek 生成诊断报告
+// Vercel Serverless Function — 飞书知识库 + DeepSeek 生成诊断报告
 
-// 从环境变量读取配置
 const FEISHU_APP_ID = process.env.FEISHU_APP_ID;
 const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET;
 const BASE_ID = process.env.FEISHU_BASE_ID;
 const TABLE_ID = process.env.FEISHU_TABLE_ID;
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+const WIKI_SPACE_ID = process.env.FEISHU_WIKI_SPACE_ID || '';
 
-// 飞书获取 tenant access token
 async function getFeishuToken() {
   const res = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
     method: 'POST',
@@ -16,6 +15,48 @@ async function getFeishuToken() {
   });
   const data = await res.json();
   return data.tenant_access_token;
+}
+
+// 从飞书知识库读取内容
+async function fetchWikiContent(token) {
+  if (!WIKI_SPACE_ID) return '';
+  try {
+    // 获取知识库节点树
+    const nodesRes = await fetch(
+      `https://open.feishu.cn/open-apis/wiki/v2/spaces/${WIKI_SPACE_ID}/nodes?page_size=20`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+    const nodesData = await nodesRes.json();
+    if (!nodesData.data || !nodesData.data.items) return '';
+
+    let allContent = '';
+    for (const node of nodesData.data.items) {
+      if (node.obj_type === 'doc') {
+        // 读取文档内容
+        const docRes = await fetch(
+          `https://open.feishu.cn/open-apis/wiki/v2/spaces/${WIKI_SPACE_ID}/nodes/${node.node_token}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        const docData = await docRes.json();
+        if (docData.data && docData.data.title) {
+          allContent += '\n【' + docData.data.title + '】\n';
+          // 获取文档原始内容
+          const rawRes = await fetch(
+            `https://open.feishu.cn/open-apis/docx/v1/documents/${node.obj_token}/raw_content`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
+          const rawData = await rawRes.json();
+          if (rawData.data && rawData.data.content) {
+            allContent += rawData.data.content + '\n';
+          }
+        }
+      }
+    }
+    return allContent.slice(0, 6000); // 截断，避免 token 超限
+  } catch (e) {
+    console.error('知识库读取失败:', e.message);
+    return '';
+  }
 }
 
 // 写数据到飞书多维表格
@@ -43,7 +84,7 @@ async function writeToFeishu(token, userData, scores, tier) {
     '技术落地力': scores.dims['技术落地力']
   };
 
-  await fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${BASE_ID}/tables/${TABLE_ID}/records`, {
+  const res = await fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${BASE_ID}/tables/${TABLE_ID}/records`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -51,10 +92,15 @@ async function writeToFeishu(token, userData, scores, tier) {
     },
     body: JSON.stringify({ fields: fields })
   });
+  const result = await res.json();
+  if (result.code !== 0) {
+    throw new Error('飞书写入失败: ' + JSON.stringify(result));
+  }
+  return result;
 }
 
-// 调用 DeepSeek 生成报告
-async function generateReport(userData, scores, tier) {
+// 调用 DeepSeek 生成报告（含知识库内容）
+async function generateReport(userData, scores, tier, kbContent) {
   const dimLabels = {
     '商业判断力': '识别AI改造机会、算ROI、出改造方案的能力',
     'AI工具力': '掌握海外AI工具、搭建工具链的能力',
@@ -68,7 +114,9 @@ async function generateReport(userData, scores, tier) {
     return `${k}(${val}/6，${level})：${dimLabels[k]}`;
   }).join('\n');
 
-  const prompt = `你是企业AI化改造领域的资深诊断专家。请根据以下用户的测评数据，生成一份真诚、专业、有深度的个人诊断报告。
+  const kbSection = kbContent ? `\n【参考知识库：企业AI改造经验与诊断方法】\n${kbContent}\n请结合以上知识库中的方法论和经验来写这份报告。` : '';
+
+  const prompt = `你是企业AI化改造领域的资深诊断专家。请根据以下用户的测评数据，生成一份真诚、专业、有深度的个人诊断报告。${kbSection}
 
 【用户信息】
 称呼：${userData.name}
@@ -146,16 +194,20 @@ export default async function handler(req, res) {
     // 1. 获取飞书 token
     const token = await getFeishuToken();
 
-    // 2. 写飞书多维表格（异步，不阻塞报告生成）
-    writeToFeishu(token, userData, scores, tier).catch(err =>
-      console.error('飞书写入失败:', err.message)
-    );
+    // 2. 读飞书知识库
+    const kbContent = await fetchWikiContent(token);
 
-    // 3. 调 DeepSeek 生成报告
-    const report = await generateReport(userData, scores, tier);
+    // 3. 写飞书多维表格 + 调 DeepSeek 并行
+    const [feishuResult, report] = await Promise.all([
+      writeToFeishu(token, userData, scores, tier).catch(e => ({ error: e.message })),
+      generateReport(userData, scores, tier, kbContent)
+    ]);
 
-    // 4. 返回报告
-    return res.status(200).json({ report: report });
+    return res.status(200).json({
+      report: report,
+      feishu: feishuResult.error ? '写入失败: ' + feishuResult.error : '已写入',
+      kbLoaded: !!kbContent
+    });
 
   } catch (err) {
     console.error('生成报告失败:', err);
