@@ -84,7 +84,11 @@ async function writeToFeishu(token, userData, scores, tier) {
     '技术落地力': scores.dims['技术落地力']
   };
 
-  const res = await fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${BASE_ID}/tables/${TABLE_ID}/records`, {
+  const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${BASE_ID}/tables/${TABLE_ID}/records`;
+  console.log('飞书写入 URL:', url);
+  console.log('飞书写入 fields:', JSON.stringify(fields));
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -92,10 +96,19 @@ async function writeToFeishu(token, userData, scores, tier) {
     },
     body: JSON.stringify({ fields: fields })
   });
-  const result = await res.json();
+  const text = await res.text();
+  console.log('飞书返回原始:', text);
+
+  let result;
+  try { result = JSON.parse(text); } catch(e) { throw new Error('飞书返回非JSON: ' + text); }
+
   if (result.code !== 0) {
-    throw new Error('飞书写入失败: ' + JSON.stringify(result));
+    throw new Error('飞书错误 code=' + result.code + ' msg=' + (result.msg || '无'));
   }
+  if (!result.data || !result.data.record) {
+    throw new Error('飞书返回成功但无record: ' + JSON.stringify(result));
+  }
+  console.log('飞书写入成功, record_id:', result.data.record.record_id);
   return result;
 }
 
@@ -203,9 +216,10 @@ export default async function handler(req, res) {
       generateReport(userData, scores, tier, kbContent)
     ]);
 
+    var feishuStatus = feishuResult.error ? feishuResult.error : '写入成功, record: ' + (feishuResult.data ? feishuResult.data.record.record_id : '?');
     return res.status(200).json({
       report: report,
-      feishu: feishuResult.error ? '写入失败: ' + feishuResult.error : '已写入',
+      feishu: feishuStatus,
       kbLoaded: !!kbContent
     });
 
