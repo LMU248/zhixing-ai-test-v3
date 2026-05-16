@@ -482,13 +482,38 @@ function fallbackReport(sc, tier){
   renderAIReport(reportText, sc, tier);
 }
 
+function mdToHtml(md) {
+  // Remove stray markdown chars (standalone * # --- that aren't formatting)
+  md = md.replace(/^---+$/gm, '<hr style="border:none;border-top:.5px solid #E5E5EA;margin:20px 0">');
+  // Headings (process deeper first)
+  md = md.replace(/^#### (.+)$/gm, '<h4 style="font-size:15px;font-weight:700;color:var(--p-deep);margin:16px 0 6px">$1</h4>');
+  md = md.replace(/^### (.+)$/gm, '<h3 style="font-family:var(--font-title);font-size:17px;font-weight:700;color:var(--p-deep);margin:20px 0 8px">$1</h3>');
+  md = md.replace(/^## (.+)$/gm, '<h2 style="font-family:var(--font-title);font-size:20px;font-weight:700;color:var(--p-deep);margin:24px 0 10px;padding-bottom:6px;border-bottom:.5px solid #E5E5EA">$1</h2>');
+  // Bold
+  md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Unordered lists
+  md = md.replace(/^- (.+)$/gm, '<li style="margin-left:18px;padding:2px 0;font-size:14px;color:var(--text2);line-height:1.7">$1</li>');
+  // Ordered lists (simple)
+  md = md.replace(/^\d+\.\s+(.+)$/gm, '<li style="margin-left:18px;padding:2px 0;font-size:14px;color:var(--text2);line-height:1.7">$1</li>');
+  // Wrap consecutive <li> in <ul>
+  md = md.replace(/((?:<li[^>]*>.*?<\/li>\n?)+)/g, '<ul style="list-style:none;padding:4px 0 12px">$1</ul>');
+  // Paragraphs
+  var parts = md.split(/\n\n+/);
+  var out = '';
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    if (!p) continue;
+    if (p.indexOf('<h') === 0 || p.indexOf('<hr') === 0 || p.indexOf('<ul') === 0) {
+      out += p;
+    } else {
+      out += '<p style="font-size:14px;color:var(--text2);line-height:1.85;margin-bottom:10px">' + p.replace(/\n/g, '<br>') + '</p>';
+    }
+  }
+  return out;
+}
+
 function renderAIReport(reportText, sc, tier){
-  var html = reportText
-    .replace(/## (.+)/g, '<h2>$1</h2>')
-    .replace(/### (.+)/g, '<h3 style="font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--p-deep);margin:18px 0 6px">$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>');
+  var html = mdToHtml(reportText);
 
   var h = '';
   var betterThan = Math.min(95, Math.round((sc.total/27)*80 + 15*Math.random()));
