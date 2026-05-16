@@ -448,11 +448,38 @@ function showReport(){
     renderAIReport(data.report, sc, tier);
   })
   .catch(function(err){
-    console.error(err);
+    console.error('API不可用，切换本地报告:', err.message);
     document.getElementById('reportLoading').style.display = 'none';
     document.getElementById('reportArea').style.display = '';
-    document.getElementById('reportArea').innerHTML = '<p style="text-align:center;color:var(--text2);padding:40px">报告生成失败，请<a href="#" onclick="retake()">重新测评</a></p>';
+    fallbackReport(sc, tier);
   });
+}
+
+function fallbackReport(sc, tier){
+  var dims = sc.dims;
+  var dimKeys = ['商业判断力','AI工具力','自动化力','技术落地力'];
+  var sorted = dimKeys.slice().sort(function(a,b){return dims[a]-dims[b]});
+  var weakest = sorted[0], strongest = sorted[3];
+
+  var tips = {
+    '商业判断力':'建议重点提升业务流程拆解和ROI测算能力。可以先从自己熟悉的业务开始，试着用"五环节拆解法"分析每个环节的AI介入价值。',
+    'AI工具力':'多接触海外AI工具（Claude、ChatGPT、Gemini），对比国内外的能力差异。哪怕每周花1小时试用一个新工具，两个月下来就会有质的飞跃。',
+    '自动化力':'推荐从n8n入门，先搭一个简单的"每日信息雷达"工作流——定时抓新闻→AI分析→推送到飞书。完成第一个工作流后会建立信心。',
+    '技术落地力':'不用担心编程基础。现在的AI编程工具（Cursor、Claude Code）用自然语言就能做应用。从一个小工具开始——比如给自己公司做一个报价计算器。'
+  };
+
+  var reportText = '## 能力画像\n' +
+    tier.desc + '\n\n' +
+    '## 亮点分析\n' +
+    '你目前最强的维度是「'+strongest+'」。这是你差异化竞争力的来源。建议继续深耕这个维度，让它成为你最有力的说服点。\n\n' +
+    '## 关键提升点\n' +
+    '最需要提升的是「'+weakest+'」。'+tips[weakest]+'\n\n' +
+    '## 推荐学习路径\n' +
+    '先补齐最短板的基础认知，再通过实战项目巩固优势维度，最后把能力打包成可交付的服务产品。每一步不需要完美，但需要行动。\n\n' +
+    '## 一句话鼓励\n' +
+    'AI改造企业的能力不是天赋，是练出来的。你迈出诊断这一步，已经超过了大多数人。继续往前走。';
+
+  renderAIReport(reportText, sc, tier);
 }
 
 function renderAIReport(reportText, sc, tier){
