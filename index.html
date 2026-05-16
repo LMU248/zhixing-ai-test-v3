@@ -495,23 +495,25 @@ function fallbackReport(sc, tier){
 }
 
 function mdToHtml(md) {
-  // 1. Horizontal rules
+  // 1. 【Section Title】→ H2
+  md = md.replace(/^【(.+?)】\s*(.*)$/gm, '<h2>【$1】$2</h2>');
+  // 2. 「emphasis」→ highlight
+  md = md.replace(/「(.+?)」/g, '<em>$1</em>');
+  // 3. Numbered sub-headings (like "3.1 总体战略规划")
+  md = md.replace(/^(\d+\.\d+)\s+(.+)$/gm, '<h3>$1 $2</h3>');
+  // 4. Bullet items with · (Chinese middle dot)
+  md = md.replace(/^· (.+)$/gm, '<li>$1</li>');
+  // 5. Ordered list items (numbered, but not sub-headings like 3.1)
+  md = md.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
+  // 6. Any remaining markdown artifacts (legacy compatibility)
   md = md.replace(/^---+$/gm, '<hr>');
-  // 2. Bold (process before headings so bold works inside titles)
   md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // 3. Headings (deeper first)
-  md = md.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  md = md.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   md = md.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  // 4. Unordered list items
-  md = md.replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>');
-  // 5. Ordered list items (numbered)
-  md = md.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
-  // 6. Wrap consecutive <li> in <ul> or <ol>
-  md = md.replace(/((?:<li>.*?<\/li>\n?)+)/g, function(m) {
-    return '<ul>\n' + m + '</ul>\n';
-  });
-  // 7. Paragraphs: split by double newline
+  md = md.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  md = md.replace(/^- (.+)$/gm, '<li>$1</li>');
+  // 7. Wrap consecutive <li> in <ul>
+  md = md.replace(/((?:<li>.*?<\/li>\n?)+)/g, '<ul>\n$1</ul>\n');
+  // 8. Paragraphs
   var parts = md.split(/\n\n+/);
   var out = '';
   for (var i = 0; i < parts.length; i++) {
@@ -520,7 +522,6 @@ function mdToHtml(md) {
     if (p.indexOf('<h') === 0 || p.indexOf('<hr') === 0 || p.indexOf('<ul') === 0 || p.indexOf('<ol') === 0) {
       out += p;
     } else {
-      // Single newlines within a paragraph become <br>
       out += '<p>' + p.replace(/\n/g, '<br>') + '</p>';
     }
   }
