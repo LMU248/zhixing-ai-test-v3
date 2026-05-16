@@ -21,8 +21,6 @@ exports.main_handler = async (event) => {
     var WID = 'LHRcwL1QZiaOzAkyyK7cZPJUnbb';
     var DKEY = 'sk-77a09e93542f4fd792f19a9a96ca40da';
 
-    var fetch = (await import('node-fetch')).default || globalThis.fetch;
-
     var tr = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ app_id: AID, app_secret: ASEC })
